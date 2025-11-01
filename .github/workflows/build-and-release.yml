@@ -1,0 +1,330 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Build for linux-${{ matrix.arch }}
+      run: |
+        PLATFORM="linux-${{ matrix.arch }}"
+        NODE_VERSION="v20.11.0"
+        NODE_ARCH="linux-${{ matrix.arch }}"
+        
+        mkdir -p output/${PLATFORM}
+        
+        # Bundle TypeScript with esbuild
+        npx esbuild index.ts \
+          --bundle \
+          --platform=node \
+          --target=node18 \
+          --format=esm \
+          --outfile=output/${PLATFORM}/bundle.js \
+          --external:ws \
+          --external:vscode-ws-jsonrpc \
+          --external:vscode-jsonrpc \
+          --external:dotenv
+        
+        # Download Node.js runtime
+        NODE_PKG="node-${NODE_VERSION}-${NODE_ARCH}"
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.tar.gz"
+        curl -L "${NODE_URL}" -o /tmp/${NODE_PKG}.tar.gz
+        tar -xzf /tmp/${NODE_PKG}.tar.gz -C /tmp/
+        mv /tmp/${NODE_PKG} output/${PLATFORM}/node
+        
+        # Strip unnecessary files from Node.js
+        cd output/${PLATFORM}/node
+        rm -rf lib/node_modules/npm lib/node_modules/corepack
+        rm -f bin/npm bin/npx bin/corepack
+        rm -rf share/doc share/man share/systemtap include
+        rm -f README.md CHANGELOG.md LICENSE *.md
+        if command -v strip &> /dev/null; then
+          strip bin/node 2>/dev/null || true
+        fi
+        cd ../../..
+        
+        # Install production dependencies
+        cp package.json output/${PLATFORM}/
+        cd output/${PLATFORM}
+        npm install --production --no-optional
+        rm package.json package-lock.json
+        
+        # Prune unnecessary files from node_modules
+        find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "benchmark" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type f -name "*.md" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.map" -delete 2>/dev/null || true
+        find node_modules -type f -name "LICENSE*" -delete 2>/dev/null || true
+        find node_modules -type f -name "CHANGELOG*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".npmignore" -delete 2>/dev/null || true
+        find node_modules -type f -name ".eslintrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".prettierrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name "tsconfig.json" -delete 2>/dev/null || true
+        cd ../..
+        
+        # Copy config template
+        cp pyrightconfig.json output/${PLATFORM}/
+        
+        # Create start script
+        cat > output/${PLATFORM}/start.sh << 'EOF'
+        #!/bin/bash
+        DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        "${DIR}/node/bin/node" "${DIR}/bundle.js" "$@"
+        EOF
+        chmod +x output/${PLATFORM}/start.sh
+        
+        # Create compressed archive
+        cd output
+        tar -czf ${PLATFORM}.tar.gz ${PLATFORM}/
+        cd ..
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-${{ matrix.arch }}
+        path: output/linux-${{ matrix.arch }}.tar.gz
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Build for darwin-${{ matrix.arch }}
+      run: |
+        PLATFORM="darwin-${{ matrix.arch }}"
+        NODE_VERSION="v20.11.0"
+        NODE_ARCH="darwin-${{ matrix.arch }}"
+        
+        mkdir -p output/${PLATFORM}
+        
+        # Bundle TypeScript with esbuild
+        npx esbuild index.ts \
+          --bundle \
+          --platform=node \
+          --target=node18 \
+          --format=esm \
+          --outfile=output/${PLATFORM}/bundle.js \
+          --external:ws \
+          --external:vscode-ws-jsonrpc \
+          --external:vscode-jsonrpc \
+          --external:dotenv
+        
+        # Download Node.js runtime
+        NODE_PKG="node-${NODE_VERSION}-${NODE_ARCH}"
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.tar.gz"
+        curl -L "${NODE_URL}" -o /tmp/${NODE_PKG}.tar.gz
+        tar -xzf /tmp/${NODE_PKG}.tar.gz -C /tmp/
+        mv /tmp/${NODE_PKG} output/${PLATFORM}/node
+        
+        # Strip unnecessary files from Node.js
+        cd output/${PLATFORM}/node
+        rm -rf lib/node_modules/npm lib/node_modules/corepack
+        rm -f bin/npm bin/npx bin/corepack
+        rm -rf share/doc share/man share/systemtap include
+        rm -f README.md CHANGELOG.md LICENSE *.md
+        if command -v strip &> /dev/null; then
+          strip bin/node 2>/dev/null || true
+        fi
+        cd ../../..
+        
+        # Install production dependencies
+        cp package.json output/${PLATFORM}/
+        cd output/${PLATFORM}
+        npm install --production --no-optional
+        rm package.json package-lock.json
+        
+        # Prune unnecessary files from node_modules
+        find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "benchmark" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type f -name "*.md" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.map" -delete 2>/dev/null || true
+        find node_modules -type f -name "LICENSE*" -delete 2>/dev/null || true
+        find node_modules -type f -name "CHANGELOG*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".npmignore" -delete 2>/dev/null || true
+        find node_modules -type f -name ".eslintrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".prettierrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name "tsconfig.json" -delete 2>/dev/null || true
+        cd ../..
+        
+        # Copy config template
+        cp pyrightconfig.json output/${PLATFORM}/
+        
+        # Create start script
+        cat > output/${PLATFORM}/start.sh << 'EOF'
+        #!/bin/bash
+        DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        "${DIR}/node/bin/node" "${DIR}/bundle.js" "$@"
+        EOF
+        chmod +x output/${PLATFORM}/start.sh
+        
+        # Create compressed archive
+        cd output
+        tar -czf ${PLATFORM}.tar.gz ${PLATFORM}/
+        cd ..
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: darwin-${{ matrix.arch }}
+        path: output/darwin-${{ matrix.arch }}.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Build for win32-x64
+      shell: bash
+      run: |
+        PLATFORM="win32-x64"
+        NODE_VERSION="v20.11.0"
+        NODE_ARCH="win32-x64"
+        
+        mkdir -p output/${PLATFORM}
+        
+        # Bundle TypeScript with esbuild
+        npx esbuild index.ts \
+          --bundle \
+          --platform=node \
+          --target=node18 \
+          --format=esm \
+          --outfile=output/${PLATFORM}/bundle.js \
+          --external:ws \
+          --external:vscode-ws-jsonrpc \
+          --external:vscode-jsonrpc \
+          --external:dotenv
+        
+        # Download Node.js runtime
+        NODE_PKG="node-${NODE_VERSION}-${NODE_ARCH}"
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.zip"
+        curl -L "${NODE_URL}" -o /tmp/${NODE_PKG}.zip
+        unzip -q /tmp/${NODE_PKG}.zip -d /tmp/
+        mv /tmp/${NODE_PKG} output/${PLATFORM}/node
+        
+        # Strip unnecessary files from Node.js
+        cd output/${PLATFORM}/node
+        rm -rf lib/node_modules/npm lib/node_modules/corepack node_modules/npm node_modules/corepack
+        rm -f npm npm.cmd npx npx.cmd corepack corepack.cmd
+        rm -f README.md CHANGELOG.md LICENSE *.md
+        cd ../../..
+        
+        # Install production dependencies
+        cp package.json output/${PLATFORM}/
+        cd output/${PLATFORM}
+        npm install --production --no-optional
+        rm package.json package-lock.json
+        
+        # Prune unnecessary files from node_modules
+        find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "benchmark" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type f -name "*.md" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.map" -delete 2>/dev/null || true
+        find node_modules -type f -name "LICENSE*" -delete 2>/dev/null || true
+        find node_modules -type f -name "CHANGELOG*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".npmignore" -delete 2>/dev/null || true
+        find node_modules -type f -name ".eslintrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name ".prettierrc*" -delete 2>/dev/null || true
+        find node_modules -type f -name "tsconfig.json" -delete 2>/dev/null || true
+        cd ../..
+        
+        # Copy config template
+        cp pyrightconfig.json output/${PLATFORM}/
+        
+        # Create start script
+        cat > output/${PLATFORM}/start.bat << 'EOF'
+        @echo off
+        set DIR=%~dp0
+        "%DIR%node\node.exe" "%DIR%bundle.js" %*
+        EOF
+        
+        # Create compressed archive
+        cd output
+        powershell Compress-Archive -Path ${PLATFORM} -DestinationPath ${PLATFORM}.zip
+        cd ..
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: win32-x64
+        path: output/win32-x64.zip
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [linux, macos, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
