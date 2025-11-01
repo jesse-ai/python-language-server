@@ -228,7 +228,7 @@ jobs:
       run: |
         PLATFORM="win32-x64"
         NODE_VERSION="v20.11.0"
-        NODE_ARCH="win32-x64"
+        NODE_DOWNLOAD_ARCH="win-x64"
         
         mkdir -p output/${PLATFORM}
         
@@ -244,12 +244,14 @@ jobs:
           --external:vscode-jsonrpc \
           --external:dotenv
         
-        # Download Node.js runtime
-        NODE_PKG="node-${NODE_VERSION}-${NODE_ARCH}"
+        # Download Node.js runtime (Windows uses 'win-x64' not 'win32-x64')
+        NODE_PKG="node-${NODE_VERSION}-${NODE_DOWNLOAD_ARCH}"
         NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.zip"
-        curl -L "${NODE_URL}" -o /tmp/${NODE_PKG}.zip
-        unzip -q /tmp/${NODE_PKG}.zip -d /tmp/
-        mv /tmp/${NODE_PKG} output/${PLATFORM}/node
+        echo "Downloading: ${NODE_URL}"
+        curl -fsSL "${NODE_URL}" -o "${NODE_PKG}.zip"
+        unzip -q "${NODE_PKG}.zip" -d "output/${PLATFORM}/"
+        mv "output/${PLATFORM}/${NODE_PKG}" "output/${PLATFORM}/node"
+        rm -f "${NODE_PKG}.zip"
         
         # Strip unnecessary files from Node.js
         cd output/${PLATFORM}/node
