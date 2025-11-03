@@ -85,7 +85,7 @@ export function startPyrightBridge() {
         // Set cwd to the project root so Pyright can find pyrightconfig.json and .venv
         console.log(`Spawning Pyright with cwd: ${BOT_ROOT}`)
 
-        const pyright = spawn('node', [PYRIGHT_PATH, '--stdio'], {
+        const pyright = spawn(process.execPath, [PYRIGHT_PATH, '--stdio'], {
             cwd: BOT_ROOT,
             env: process.env
         })
