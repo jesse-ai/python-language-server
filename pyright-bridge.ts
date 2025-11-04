@@ -4,7 +4,7 @@ import { toSocket, WebSocketMessageReader, WebSocketMessageWriter } from 'vscode
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node.js'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import path, { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 
 import 'dotenv/config'
 
@@ -50,13 +50,20 @@ function deployPyrightConfig() {
         return
     }
     
-    // Read template and replace variables
-    let config = readFileSync(templatePath, 'utf-8')
-    config = config.replace(/\$\{BOT_ROOT\}/g, BOT_ROOT)
-    config = config.replace(/\$\{JESSE_ROOT\}/g, JESSE_ROOT || '')
+    // Normalize paths to use forward slashes (works on all platforms)
+    const normalizedBotRoot = BOT_ROOT.replace(/\\/g, '/')
+    const normalizedJesseRoot = (JESSE_ROOT || '').replace(/\\/g, '/')
     
-    // Write to workspace
-    writeFileSync(targetPath, config)
+    // Read template and replace variables with normalized paths
+    let configContent = readFileSync(templatePath, 'utf-8')
+    configContent = configContent.replace(/\$\{BOT_ROOT\}/g, normalizedBotRoot)
+    configContent = configContent.replace(/\$\{JESSE_ROOT\}/g, normalizedJesseRoot)
+    
+    // Parse and re-serialize to ensure valid, formatted JSON
+    const config = JSON.parse(configContent)
+    
+    // Write normalized, valid JSON to workspace
+    writeFileSync(targetPath, JSON.stringify(config, null, 2))
     console.log(`Deployed pyrightconfig.json to ${targetPath}`)
 }
 
@@ -108,10 +115,10 @@ export function startPyrightBridge() {
                 console.log('🔧 Auto-injecting project configuration')
                 
                 msg.params = msg.params || {}
-                msg.params.rootUri = `file://${BOT_ROOT}`
+                msg.params.rootUri = pathToFileURL(BOT_ROOT).toString()
                 msg.params.workspaceFolders = [
                 {
-                    uri: `file://${BOT_ROOT}`,
+                    uri: pathToFileURL(BOT_ROOT).toString(),
                     name: 'jesse-ai'
                 }
                 ]
@@ -123,11 +130,27 @@ export function startPyrightBridge() {
         if (msg.params?.textDocument?.uri) {
             const uri = msg.params.textDocument.uri
             
-            // If not already absolute, make it absolute
-            if (!uri.startsWith('file://')) {
-                msg.params.textDocument.uri = `file://${path.join(BOT_ROOT, uri)}`
+            // Parse the file URI to get the path
+            if (uri.startsWith('file://')) {
+                try {
+                    const filePath = fileURLToPath(uri)
+                    
+                    // If the path is relative, make it absolute
+                    if (!path.isAbsolute(filePath)) {
+                        const absolutePath = path.join(BOT_ROOT, filePath)
+                        msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
+                    }
+                } catch (err) {
+                    // If parsing fails, assume it's a relative path without proper file:// scheme
+                    const absolutePath = path.join(BOT_ROOT, uri.replace('file:///', '').replace('file://', ''))
+                    msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
                 }
+            } else {
+                // No file:// prefix, treat as relative path
+                const absolutePath = path.join(BOT_ROOT, uri)
+                msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
             }
+        }
 
             writer.write(msg)
         })

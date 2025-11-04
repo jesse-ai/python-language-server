@@ -2,13 +2,13 @@
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
   "extraPaths": [
-    "${JESSE_ROOT}",
+    "${JESSE_ROOT}"
   ],
   "executionEnvironments": [
     {
       "root": "${BOT_ROOT}",
       "extraPaths": [
-        "${JESSE_ROOT}",
+        "${JESSE_ROOT}"
       ]
     }
   ]
