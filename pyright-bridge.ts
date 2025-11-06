@@ -7,6 +7,7 @@ import path, { dirname, join } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 
 import 'dotenv/config'
+import { handleFormatting } from './formatting.js'
 
 // Get the directory where bundle.js is located (not cwd)
 const __filename = fileURLToPath(import.meta.url)
@@ -39,6 +40,7 @@ const PYRIGHT_WS_PORT = Number(args['port'])
 const BOT_ROOT = args['bot-root']
 const JESSE_ROOT = args['jesse-root']
 const PYRIGHT_PATH = join(__dirname, 'node_modules/pyright/dist/pyright-langserver.js')
+const RUFF_PATH = process.env.RUFF_PATH || join(__dirname, 'bin/ruff')
 
 // Deploy pyrightconfig.json to the Jesse workspace on startup
 function deployPyrightConfig() {
@@ -84,6 +86,7 @@ export function startPyrightBridge() {
         const wss = new WebSocketServer({ port: PYRIGHT_WS_PORT, path: '/lsp'})
         console.log(`Pyright WS bridge running on ws://localhost:${PYRIGHT_WS_PORT}/lsp`)
         console.log(`Execution root: ${BOT_ROOT}`)
+        console.log(`Ruff path: ${RUFF_PATH}`)
 
         wss.on('connection', (ws) => {
         console.log('Client connected, spawning Pyright...')
@@ -125,7 +128,7 @@ export function startPyrightBridge() {
                 
                 console.log('✓ rootUri:', msg.params.rootUri)
             }
-      
+
         // Auto-convert relative file URIs to absolute
         if (msg.params?.textDocument?.uri) {
             const uri = msg.params.textDocument.uri
@@ -135,21 +138,33 @@ export function startPyrightBridge() {
                 try {
                     const filePath = fileURLToPath(uri)
                     
-                    // If the path is relative, make it absolute
-                    if (!path.isAbsolute(filePath)) {
+                    // Check if the path is relative to BOT_ROOT
+                    // Even if it starts with /, it might be relative (e.g., /strategies/test.py)
+                    // We need to check if it actually exists or if it should be resolved against BOT_ROOT
+                    if (!existsSync(filePath)) {
+                        // Path doesn't exist as-is, try resolving against BOT_ROOT
                         const absolutePath = path.join(BOT_ROOT, filePath)
                         msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
+                        console.log(`🔄 Converted relative URI to absolute: ${uri} -> ${msg.params.textDocument.uri}`)
                     }
                 } catch (err) {
                     // If parsing fails, assume it's a relative path without proper file:// scheme
                     const absolutePath = path.join(BOT_ROOT, uri.replace('file:///', '').replace('file://', ''))
                     msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
+                    console.log(`🔄 Converted relative URI to absolute: ${uri} -> ${msg.params.textDocument.uri}`)
                 }
             } else {
                 // No file:// prefix, treat as relative path
                 const absolutePath = path.join(BOT_ROOT, uri)
                 msg.params.textDocument.uri = pathToFileURL(absolutePath).toString()
+                console.log(`🔄 Converted relative URI to absolute: ${uri} -> ${msg.params.textDocument.uri}`)
             }
+        }
+
+        // Intercept formatting requests and handle with ruff (after URI conversion)
+        if (msg.method === 'textDocument/formatting' || msg.method === 'textDocument/rangeFormatting') {
+            handleFormatting(msg, writer, wsWriter, RUFF_PATH)
+            return // Don't forward to Pyright
         }
 
             writer.write(msg)

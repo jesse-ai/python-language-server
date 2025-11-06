@@ -14,6 +14,7 @@ The python-language-server (pyright-lsp) repository is a WebSocket bridge for th
 - **TypeScript** - Main language for the bridge implementation
 - **Node.js** - Runtime environment
 - **Pyright** - Microsoft's static type checker for Python
+- **Ruff** - Fast Python linter and formatter (bundled for formatting support)
 - **WebSocket (ws)** - WebSocket communication
 - **vscode-ws-jsonrpc** - JSON-RPC over WebSocket
 - **esbuild** - Fast JavaScript bundler
@@ -35,32 +36,53 @@ npm start -- --port 9011 --project-root /path/to/project --jesse-relative-path j
 
 ### Building for Production
 
-#### Single Platform (Linux x64)
+#### Quick Builds with Ruff Support
 ```bash
-./build.sh
-```
-Output: `output/linux-x64.tar.gz` (~34 MB)
+# Build for Linux x64 with Ruff formatting support
+npm run build:linux
 
-#### All Platforms
+# Build for macOS (Intel and Apple Silicon) with Ruff
+npm run build:mac
+
+# Build for Linux and macOS with Ruff
+npm run build:all
+
+# Or use the script directly for specific platforms
+./build-with-ruff.sh linux:x64 darwin:arm64
+```
+
+#### Legacy Builds (without Ruff)
 ```bash
+# Linux x64 only (Pyright only, no Ruff)
+./build.sh
+
+# All platforms (Pyright only, no Ruff)
 ./build-all.sh
 ```
-Outputs:
-- `linux-x64.tar.gz` / `linux-arm64.tar.gz`
-- `darwin-x64.tar.gz` / `darwin-arm64.tar.gz`
-- `win32-x64.zip`
 
 ### Build Scripts
-- `build.sh` - Build for Linux x64 only
-- `build-all.sh` - Build for all supported platforms
+- `build.sh` - Build for Linux x64 only (no Ruff)
+- `build-all.sh` - Build for all supported platforms (no Ruff)
+- `build-with-ruff.sh` - Build with Ruff formatting support for Linux & macOS
+
+### Build Outputs
+**With Ruff (recommended):**
+- `linux-x64.tar.gz` (~46 MB) - Includes Ruff formatter
+- `darwin-x64.tar.gz` (~44 MB) - Intel Mac with Ruff
+- `darwin-arm64.tar.gz` (~44 MB) - Apple Silicon with Ruff
+
+**Without Ruff:**
+- `linux-x64.tar.gz` (~34 MB) - Pyright only
 
 ## Important Notes
 
 ### Architecture
 - **WebSocket Bridge** - Translates WebSocket messages to Pyright LSP protocol
-- **Bundled Runtime** - Includes Node.js, eliminating system dependencies
+- **Formatting Interception** - Intercepts LSP formatting requests and handles them with Ruff
+- **Bundled Runtime** - Includes Node.js (and Ruff if built with `build-with-ruff.sh`)
+- **Strategy Module Support** - Automatically handles Jesse's strategy structure (`.py` files that are actually `__init__.py` modules)
 - **Production-only Dependencies** - Optimized builds exclude dev dependencies
-- **70% Size Reduction** - Optimized build process significantly reduces package size
+- **Cross-Platform** - All path handling uses Node.js `path` module for Windows/Linux/macOS compatibility
 
 ### Code Style
 - Don't write comments for functions unless specifically asked

@@ -143,3 +143,4 @@ build/
 output/
 *.tar.gz
 *.zip
+bin/

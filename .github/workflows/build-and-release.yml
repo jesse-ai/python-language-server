@@ -1,8 +1,9 @@
-name: Build and Release
+name: Build and Release (Legacy - No Ruff)
 
 on:
-  push:
-    tags: ['v*']
+  # Disabled automatic tag builds - use build-with-ruff.yml instead
+  # push:
+  #   tags: ['v*']
   workflow_dispatch:
 
 permissions:

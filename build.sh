@@ -8,6 +8,7 @@ set -e
 PLATFORM="linux-x64"
 NODE_VERSION="v20.11.0"
 NODE_ARCH="linux-x64"
+RUFF_VERSION="0.14.3"
 
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║  Building Pyright LSP Bridge (esbuild + Node.js)      ║"
@@ -92,7 +93,27 @@ cd ../../..
 echo "✓ Stripped unnecessary files from Node.js"
 echo ""
 
-# Step 3: Install production dependencies
+# Step 3: Download Ruff binary for Linux
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📥 Downloading Ruff ${RUFF_VERSION} for Linux x64..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+RUFF_URL="https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz"
+RUFF_FILE="/tmp/ruff-${RUFF_VERSION}-linux-x64.tar.gz"
+
+curl -L -A "Mozilla/5.0" "${RUFF_URL}" -o "${RUFF_FILE}" || {
+    echo "❌ Failed to download Ruff"
+    exit 1
+}
+
+echo "📂 Extracting Ruff..."
+mkdir -p "output/${PLATFORM}/bin"
+tar -xzf "${RUFF_FILE}" -C /tmp/
+cp "/tmp/ruff-x86_64-unknown-linux-gnu/ruff" "output/${PLATFORM}/bin/ruff"
+chmod +x "output/${PLATFORM}/bin/ruff"
+echo "✓ Ruff extracted to output/${PLATFORM}/bin/ruff"
+
+# Step 4: Install production dependencies
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📥 Installing production node_modules..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -105,7 +126,7 @@ echo '{"type":"module"}' > package.json
 echo "✓ Installed production dependencies"
 echo ""
 
-# Step 3.5: Prune unnecessary files from node_modules
+# Step 4.5: Prune unnecessary files from node_modules
 echo "🧹 Pruning unnecessary files from node_modules..."
 find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
 find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
@@ -129,13 +150,13 @@ echo "✓ Pruned unnecessary files"
 cd ../..
 echo ""
 
-# Step 4: Copy config template
+# Step 5: Copy config template
 echo "📋 Copying pyrightconfig.json..."
 cp pyrightconfig.json output/${PLATFORM}/
 echo "✓ Copied config template"
 echo ""
 
-# Step 5: Create start script
+# Step 6: Create start script
 echo "📝 Creating start script..."
 cat > "output/${PLATFORM}/start.sh" << 'EOF'
 #!/bin/bash
@@ -143,13 +164,14 @@ cat > "output/${PLATFORM}/start.sh" << 'EOF'
 # Usage: ./start.sh --port <PORT> --project-root <ROOT> --jesse-relative-path <JESSE> --bot-relative-path <BOT>
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export RUFF_PATH="${DIR}/bin/ruff"
 "${DIR}/node/bin/node" "${DIR}/bundle.js" "$@"
 EOF
 chmod +x "output/${PLATFORM}/start.sh"
 echo "✓ Created start.sh"
 echo ""
 
-# Step 6: Create compressed archive
+# Step 7: Create compressed archive
 echo "📦 Creating compressed archive..."
 cd output
 tar -czf "${PLATFORM}.tar.gz" "${PLATFORM}/"
@@ -179,6 +201,7 @@ echo "📁 Archive contains:"
 echo "   - bundle.js (all your bridge code bundled)"
 echo "   - node/ (Node.js ${NODE_VERSION} runtime, optimized)"
 echo "   - node_modules/ (Pyright + pruned dependencies)"
+echo "   - bin/ruff (Ruff ${RUFF_VERSION} formatter)"
 echo "   - pyrightconfig.json (config template)"
 echo "   - start.sh (startup script)"
 echo ""

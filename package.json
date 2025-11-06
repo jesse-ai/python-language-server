@@ -7,7 +7,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "tsx index.ts",
-    "build": "./build.sh"
+    "build": "./build.sh",
+    "build:all": "./build-with-ruff.sh",
+    "build:mac": "./build-with-ruff.sh darwin:x64 darwin:arm64",
+    "build:linux": "./build-with-ruff.sh linux:x64"
   },
   "keywords": [],
   "author": "Makan Shabani",
