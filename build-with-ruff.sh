@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Build script with Ruff support for Linux and macOS
-# Downloads platform-specific Ruff binaries and bundles them
+# Windows build included but without Ruff (Pyright only)
+# Note: Ruff is only bundled for Unix-based systems (Linux/macOS)
 
 set -e
 
@@ -9,6 +10,7 @@ NODE_VERSION="v20.11.0"
 RUFF_VERSION="0.14.3"
 
 # Function to get ruff download info for a platform
+# Returns empty string for Windows (no Ruff bundling)
 get_ruff_info() {
     local os=$1
     local arch=$2
@@ -27,6 +29,7 @@ get_ruff_info() {
             echo "ruff-aarch64-apple-darwin.tar.gz|ruff"
             ;;
         *)
+            # Windows and other platforms: no Ruff bundling
             echo ""
             ;;
     esac
@@ -46,6 +49,9 @@ build_platform() {
     
     # Get Node.js architecture name
     local node_arch="${os}-${arch}"
+    if [ "${os}" = "win32" ]; then
+        node_arch="win-${arch}"  # Node.js uses "win-x64" for Windows
+    fi
     
     # Step 1: Bundle TypeScript
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -74,8 +80,14 @@ build_platform() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     NODE_PKG="node-${NODE_VERSION}-${node_arch}"
-    NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.tar.gz"
-    NODE_FILE="/tmp/${NODE_PKG}.tar.gz"
+    
+    if [ "${os}" = "win32" ]; then
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.zip"
+        NODE_FILE="/tmp/${NODE_PKG}.zip"
+    else
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.tar.gz"
+        NODE_FILE="/tmp/${NODE_PKG}.tar.gz"
+    fi
     
     if [ ! -f "${NODE_FILE}" ]; then
         curl -L "${NODE_URL}" -o "${NODE_FILE}" || {
@@ -87,20 +99,34 @@ build_platform() {
     fi
     
     echo "📂 Extracting Node.js..."
-    tar -xzf "${NODE_FILE}" -C /tmp/
+    if [ "${os}" = "win32" ]; then
+        unzip -q "${NODE_FILE}" -d /tmp/
+    else
+        tar -xzf "${NODE_FILE}" -C /tmp/
+    fi
     mv "/tmp/${NODE_PKG}" "output/${platform}/node"
     
     # Strip unnecessary files from Node.js
     echo "🧹 Stripping unnecessary files from Node.js..."
     cd "output/${platform}/node"
-    rm -rf lib/node_modules/npm 2>/dev/null || true
-    rm -rf lib/node_modules/corepack 2>/dev/null || true
-    rm -f bin/npm bin/npx bin/corepack 2>/dev/null || true
-    rm -rf share/doc share/man share/systemtap include 2>/dev/null || true
-    rm -f README.md CHANGELOG.md LICENSE *.md 2>/dev/null || true
     
-    if command -v strip &> /dev/null && [ "${os}" != "darwin" ]; then
-        strip bin/node 2>/dev/null || true
+    if [ "${os}" = "win32" ]; then
+        # Windows cleanup
+        rm -rf node_modules/npm 2>/dev/null || true
+        rm -rf node_modules/corepack 2>/dev/null || true
+        rm -f npm npm.cmd npx npx.cmd corepack corepack.cmd 2>/dev/null || true
+        rm -f *.md LICENSE 2>/dev/null || true
+    else
+        # Unix cleanup
+        rm -rf lib/node_modules/npm 2>/dev/null || true
+        rm -rf lib/node_modules/corepack 2>/dev/null || true
+        rm -f bin/npm bin/npx bin/corepack 2>/dev/null || true
+        rm -rf share/doc share/man share/systemtap include 2>/dev/null || true
+        rm -f README.md CHANGELOG.md LICENSE *.md 2>/dev/null || true
+        
+        if command -v strip &> /dev/null && [ "${os}" != "darwin" ]; then
+            strip bin/node 2>/dev/null || true
+        fi
     fi
     
     cd ../../..
@@ -177,8 +203,10 @@ build_platform() {
     if [ "${os}" = "win32" ]; then
         cat > "output/${platform}/start.bat" << 'EOF'
 @echo off
+REM Pyright LSP WebSocket Bridge (Pyright only - no Ruff bundled)
+REM Usage: start.bat --port <PORT> --bot-root <BOT_ROOT> --jesse-root <JESSE_ROOT>
+
 set DIR=%~dp0
-set RUFF_PATH=%DIR%bin\ruff.exe
 "%DIR%node\node.exe" "%DIR%bundle.js" %*
 EOF
         echo "✓ Created start.bat"
@@ -221,6 +249,7 @@ EOF
 # Main script
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║  Building Pyright LSP with Ruff Support               ║"
+echo "║  (Ruff bundled for Linux/macOS only)                  ║"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -232,8 +261,9 @@ echo ""
 
 # Build for specified platforms or all
 if [ $# -eq 0 ]; then
-    # Build for Linux and macOS by default
-    PLATFORMS=("linux:x64" "darwin:x64" "darwin:arm64")
+    # Build for Linux, macOS, and Windows by default
+    # Note: Ruff is only bundled for Linux and macOS
+    PLATFORMS=("linux:x64" "darwin:x64" "darwin:arm64" "win32:x64")
 else
     PLATFORMS=("$@")
 fi

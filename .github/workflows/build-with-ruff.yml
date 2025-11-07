@@ -1,4 +1,4 @@
-name: Build with Ruff Support
+name: Build with Ruff Support (All Platforms)
 
 on:
   push:
@@ -11,6 +11,12 @@ permissions:
 env:
   NODE_VERSION: 'v20.11.0'
   RUFF_VERSION: '0.14.3'
+
+# This workflow builds for all platforms:
+# - Linux x64 with Ruff
+# - macOS x64 with Ruff
+# - macOS arm64 with Ruff  
+# - Windows x64 (Pyright only - no Ruff)
 
 jobs:
   linux:
@@ -213,10 +219,101 @@ jobs:
         name: darwin-${{ matrix.arch }}
         path: output/darwin-${{ matrix.arch }}.tar.gz
 
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Build for win32-x64 (Pyright only)
+      shell: bash
+      run: |
+        PLATFORM="win32-x64"
+        NODE_DOWNLOAD_ARCH="win-x64"
+        
+        mkdir -p output/${PLATFORM}
+        
+        # Bundle TypeScript with esbuild
+        npx esbuild index.ts \
+          --bundle \
+          --platform=node \
+          --target=node18 \
+          --format=esm \
+          --outfile=output/${PLATFORM}/bundle.js \
+          --external:ws \
+          --external:vscode-ws-jsonrpc \
+          --external:vscode-jsonrpc \
+          --external:dotenv
+        
+        # Download Node.js runtime (Windows uses 'win-x64' not 'win32-x64')
+        NODE_PKG="node-${NODE_VERSION}-${NODE_DOWNLOAD_ARCH}"
+        NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_PKG}.zip"
+        echo "Downloading: ${NODE_URL}"
+        curl -fsSL "${NODE_URL}" -o "${NODE_PKG}.zip"
+        unzip -q "${NODE_PKG}.zip" -d "output/${PLATFORM}/"
+        mv "output/${PLATFORM}/${NODE_PKG}" "output/${PLATFORM}/node"
+        rm -f "${NODE_PKG}.zip"
+        
+        # Strip unnecessary files from Node.js
+        cd output/${PLATFORM}/node
+        rm -rf lib/node_modules/npm lib/node_modules/corepack node_modules/npm node_modules/corepack
+        rm -f npm npm.cmd npx npx.cmd corepack corepack.cmd
+        rm -f README.md CHANGELOG.md LICENSE *.md
+        cd ../../..
+        
+        # Note: Ruff is NOT bundled for Windows builds
+        echo "Windows build: Pyright only (no Ruff bundling)"
+        
+        # Install production dependencies
+        cp package.json output/${PLATFORM}/
+        cd output/${PLATFORM}
+        npm install --production --no-optional
+        rm package-lock.json
+        echo '{"type":"module"}' > package.json
+        
+        # Prune unnecessary files from node_modules
+        find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find node_modules -type f -name "*.md" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
+        find node_modules -type f -name "*.map" -delete 2>/dev/null || true
+        cd ../..
+        
+        # Copy config template
+        cp pyrightconfig.json output/${PLATFORM}/
+        
+        # Create start script (without RUFF_PATH)
+        cat > output/${PLATFORM}/start.bat << 'EOF'
+        @echo off
+        REM Pyright LSP WebSocket Bridge (Pyright only - no Ruff bundled)
+        REM Usage: start.bat --port <PORT> --bot-root <BOT_ROOT> --jesse-root <JESSE_ROOT>
+        
+        set DIR=%~dp0
+        "%DIR%node\node.exe" "%DIR%bundle.js" %*
+        EOF
+        
+        # Create compressed archive
+        cd output
+        powershell Compress-Archive -Path ${PLATFORM} -DestinationPath ${PLATFORM}.zip
+        cd ..
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: win32-x64
+        path: output/win32-x64.zip
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [linux, macos]
+    needs: [linux, macos, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
@@ -236,33 +333,44 @@ jobs:
         body: |
           ## Pyright LSP Bridge with Ruff Formatting Support
           
-          This release includes Ruff formatter bundled with the language server.
+          This release includes Ruff formatter bundled with Unix builds (Linux/macOS).
           
           ### Platform Support
-          - ✅ Linux x64 with Ruff
-          - ✅ macOS Intel (x64) with Ruff
-          - ✅ macOS Apple Silicon (arm64) with Ruff
+          - ✅ **Linux x64** (~46 MB) - Includes Ruff formatter
+          - ✅ **macOS Intel (x64)** (~44 MB) - Includes Ruff formatter
+          - ✅ **macOS Apple Silicon (arm64)** (~44 MB) - Includes Ruff formatter
+          - ✅ **Windows x64** (~34 MB) - Pyright only (no Ruff)
+          
+          > **Note:** Ruff formatting is only bundled for Unix-based systems (Linux/macOS). Windows builds include Pyright language server capabilities only.
           
           ### Features
-          - Python language server (Pyright)
-          - Code formatting (Ruff)
-          - Cross-platform support
-          - Bundled Node.js runtime
+          - ✅ Python language server (Pyright) - All platforms
+          - ✅ Code formatting (Ruff) - Linux/macOS only
+          - ✅ Cross-platform support
+          - ✅ Bundled Node.js runtime
+          - ✅ WebSocket-based communication
           
           ### Installation
           
           **Linux:**
           ```bash
-          tar -xzf linux-x64-with-ruff.tar.gz
+          tar -xzf linux-x64.tar.gz
           cd linux-x64
           ./start.sh --port 9011 --bot-root /path/to/bot --jesse-root /path/to/jesse
           ```
           
           **macOS:**
           ```bash
-          tar -xzf darwin-arm64-with-ruff.tar.gz  # or darwin-x64-with-ruff.tar.gz
+          tar -xzf darwin-arm64.tar.gz  # or darwin-x64.tar.gz for Intel Macs
           cd darwin-arm64  # or darwin-x64
           ./start.sh --port 9011 --bot-root /path/to/bot --jesse-root /path/to/jesse
+          ```
+          
+          **Windows:**
+          ```cmd
+          REM Extract win32-x64.zip
+          cd win32-x64
+          start.bat --port 9011 --bot-root C:\path\to\bot --jesse-root C:\path\to\jesse
           ```
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
