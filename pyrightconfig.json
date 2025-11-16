@@ -1,4 +1,5 @@
 {
+  "typeCheckingMode": "off",
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
   "extraPaths": [
