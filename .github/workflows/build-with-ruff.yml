@@ -14,16 +14,22 @@ env:
 
 # This workflow builds for all platforms:
 # - Linux x64 with Ruff
+# - Linux arm64 with Ruff
 # - macOS x64 with Ruff
-# - macOS arm64 with Ruff  
+# - macOS arm64 with Ruff
 # - Windows x64 (Pyright only - no Ruff)
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64]
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm   # native ARM runner (free for public repos)
     steps:
     - uses: actions/checkout@v4
     
@@ -70,12 +76,17 @@ jobs:
         cd ../../..
         
         # Download Ruff for Linux
-        echo "Downloading Ruff ${RUFF_VERSION} for linux-x64..."
-        RUFF_URL="https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz"
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          RUFF_ARCH="x86_64"
+        else
+          RUFF_ARCH="aarch64"
+        fi
+        echo "Downloading Ruff ${RUFF_VERSION} for linux-${{ matrix.arch }}..."
+        RUFF_URL="https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-${RUFF_ARCH}-unknown-linux-gnu.tar.gz"
         mkdir -p output/${PLATFORM}/bin
         curl -L -A "Mozilla/5.0" "${RUFF_URL}" -o /tmp/ruff.tar.gz
         tar -xzf /tmp/ruff.tar.gz -C /tmp/
-        cp /tmp/ruff-x86_64-unknown-linux-gnu/ruff output/${PLATFORM}/bin/ruff
+        cp /tmp/ruff-${RUFF_ARCH}-unknown-linux-gnu/ruff output/${PLATFORM}/bin/ruff
         chmod +x output/${PLATFORM}/bin/ruff
         
         # Install production dependencies
@@ -337,6 +348,7 @@ jobs:
           
           ### Platform Support
           - ✅ **Linux x64** (~46 MB) - Includes Ruff formatter
+          - ✅ **Linux arm64** (~46 MB) - Includes Ruff formatter
           - ✅ **macOS Intel (x64)** (~44 MB) - Includes Ruff formatter
           - ✅ **macOS Apple Silicon (arm64)** (~44 MB) - Includes Ruff formatter
           - ✅ **Windows x64** (~34 MB) - Pyright only (no Ruff)
@@ -354,8 +366,8 @@ jobs:
           
           **Linux:**
           ```bash
-          tar -xzf linux-x64.tar.gz
-          cd linux-x64
+          tar -xzf linux-x64.tar.gz  # or linux-arm64.tar.gz for ARM (e.g. Raspberry Pi, Apple Silicon Docker)
+          cd linux-x64  # or linux-arm64
           ./start.sh --port 9011 --bot-root /path/to/bot --jesse-root /path/to/jesse
           ```
           

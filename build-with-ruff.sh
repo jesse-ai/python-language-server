@@ -263,7 +263,7 @@ echo ""
 if [ $# -eq 0 ]; then
     # Build for Linux, macOS, and Windows by default
     # Note: Ruff is only bundled for Linux and macOS
-    PLATFORMS=("linux:x64" "darwin:x64" "darwin:arm64" "win32:x64")
+    PLATFORMS=("linux:x64" "linux:arm64" "darwin:x64" "darwin:arm64" "win32:x64")
 else
     PLATFORMS=("$@")
 fi
