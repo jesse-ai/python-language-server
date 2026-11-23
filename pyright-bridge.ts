@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { timingSafeEqual } from 'crypto'
 import { WebSocketServer } from 'ws'
 import { toSocket, WebSocketMessageReader, WebSocketMessageWriter } from 'vscode-ws-jsonrpc'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node.js'
@@ -37,6 +38,11 @@ function parseArgs() {
 // Example: node index.js --port 9011 --project-root /home/king/jesse/jesse-ai --jesse-relative-path jesse/jesse --bot-relative-path jesse-bot
 const args = parseArgs()
 const PYRIGHT_WS_PORT = Number(args['port'])
+// Jesse passes --host 127.0.0.1 and a --token, and reaches this server through its own
+// authenticated /lsp route. Without them (older Jesse versions) the server listens on every
+// interface and accepts any connection, as it always has.
+const WS_HOST = args['host']
+const WS_TOKEN = args['token']
 const BOT_ROOT = args['bot-root']
 const JESSE_ROOT = args['jesse-root']
 const PYRIGHT_PATH = join(__dirname, 'node_modules/pyright/dist/pyright-langserver.js')
@@ -71,6 +77,15 @@ function deployPyrightConfig() {
 
 
 
+// Whether a connection request carries this server's token, compared in constant time.
+function hasValidToken(requestUrl: string | undefined): boolean {
+    if (!WS_TOKEN) return true
+    const given = new URL(requestUrl || '/', 'http://localhost').searchParams.get('token') || ''
+    const expected = Buffer.from(WS_TOKEN)
+    const actual = Buffer.from(given)
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
 export function startPyrightBridge() {
         
 
@@ -83,8 +98,13 @@ export function startPyrightBridge() {
         // Deploy config before starting the server
         deployPyrightConfig()
         
-        const wss = new WebSocketServer({ port: PYRIGHT_WS_PORT, path: '/lsp'})
-        console.log(`Pyright WS bridge running on ws://localhost:${PYRIGHT_WS_PORT}/lsp`)
+        const wss = new WebSocketServer({
+            port: PYRIGHT_WS_PORT,
+            host: WS_HOST,
+            path: '/lsp',
+            verifyClient: (info: { req: { url?: string } }) => hasValidToken(info.req.url),
+        })
+        console.log(`Pyright WS bridge running on ws://${WS_HOST || 'localhost'}:${PYRIGHT_WS_PORT}/lsp`)
         console.log(`Execution root: ${BOT_ROOT}`)
         console.log(`Ruff path: ${RUFF_PATH}`)
 
@@ -163,7 +183,7 @@ export function startPyrightBridge() {
 
         // Intercept formatting requests and handle with ruff (after URI conversion)
         if (msg.method === 'textDocument/formatting' || msg.method === 'textDocument/rangeFormatting') {
-            handleFormatting(msg, writer, wsWriter, RUFF_PATH)
+            handleFormatting(msg, writer, wsWriter, RUFF_PATH, BOT_ROOT)
             return // Don't forward to Pyright
         }
 

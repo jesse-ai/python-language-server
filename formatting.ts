@@ -6,7 +6,14 @@ import { fileURLToPath } from 'url'
 
 // Function to handle code formatting with ruff
 // Note: The bridge already converts relative URIs to absolute URIs before calling this function
-export async function handleFormatting(msg: any, writer: any, wsWriter: any, ruffPath: string) {
+// Whether a path is inside the project folder. The editor only formats the project's own files,
+// so a client can't use formatting to read files elsewhere on the machine.
+function isInside(root: string, filePath: string): boolean {
+    const relative = path.relative(path.resolve(root), path.resolve(filePath))
+    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
+export async function handleFormatting(msg: any, writer: any, wsWriter: any, ruffPath: string, projectRoot: string) {
     try {
         console.log('🎨 Formatting request intercepted, handling with ruff...')
 
@@ -86,7 +93,7 @@ export async function handleFormatting(msg: any, writer: any, wsWriter: any, ruf
             // Read the current file content
             // Note: For formatting, we should use the file on disk as the source of truth
             let fileContent: string
-            if (existsSync(filePath)) {
+            if (isInside(projectRoot, filePath) && existsSync(filePath)) {
                 fileContent = readFileSync(filePath, 'utf-8')
                 console.log(`📖 Read file from disk: ${filePath}`)
                 console.log(`   Content length: ${fileContent.length} chars`)
